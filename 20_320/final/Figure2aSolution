@@ -1,0 +1,146 @@
+clear
+clc
+
+%%%%%%%%%%%%%%%%%%% Data Processing %%%%%%%%%%%%%%%%%%%
+
+raw_data_full = readtable('/implementation_data.csv');
+
+[C_t, raw] = processed(raw_data_full,156,1,30); %Data Interpolation
+
+tp = linspace(0.5,21,42);
+ydata = C_t(1:42);
+
+%Population Size
+N = 57.1e6;
+
+%Guesses for parameter values and initial conditions
+alpha = .775;
+beta = 1/8;
+k_0 = 0.84;
+k = 0;
+
+I0_i = 2.55 * C_t(1)/N;
+X0_i = C_t(1)/N;
+S0_i = 1 - I0_i - X0_i;
+R0_i = 10000;
+
+%%%%%%%%%%%%%%%%%%% Define the optimization problem %%%%%%%%%%%%%%%%%%%%%%
+
+% Create optimization variable of the parameters
+% This contains alpha, beta, k_0, k, I0/X0, (r1 r2 r3 r4 r5)
+r = optimvar('r',5,"LowerBound",[.6 1/8 0 0 0.001],"UpperBound",[.8 1/8 1 1 1000]);
+
+%Define initial conditions based off fitted parameter value I0/X0
+X0 = C_t(1)/N;
+I0 = r(5) * C_t(1)/N;
+S0 = 1 - I0 - X0;
+R0 = 0;
+icond = [S0, I0, R0, X0];
+
+% Use the solved ODE as the objective function in the optimization
+% i.e. how is the data to be compared to the experimental points going
+% to be generated using the current set of r values
+% The function is the numerically solved ODE, convert to optimization exp.
+fitA = fcn2optimexpr(@RtoODE,r(1:4),tp,icond);
+
+% Define the objective function, least-squares between fit and actual
+obj = sum(sum((fitA.* N - ydata).^2));
+
+% Create optimization problem
+% Need the Optimization toolbox installed in order to use this
+prob = optimproblem("Objective",obj);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%% Run Optimization %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Show the problem in the Command Window
+show(prob)
+
+% Define initial guesses
+r0.r = [alpha beta k_0 k I0_i/X0_i];
+
+% Solve the optimization problem with the initial guesses
+[rsol,sumsq] = solve(prob,r0);
+
+% Display the values of fitted parameters
+disp('Global fit results:');
+disp(['alpha: ',num2str(rsol.r(1))]);
+disp(['beta: ',num2str(rsol.r(2))]);
+disp(['k_0: ',num2str(rsol.r(3))]);
+disp(['k: ',num2str(rsol.r(4))]);
+disp(['Io/Xo: ',num2str(rsol.r(5))]);
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%% Plot the model fit %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fitted_tp = linspace(1,21,21); 
+plot(fitted_tp,raw(:,1:21),'s','Color', 'Black', 'DisplayName', 'Hubei'); %Plots real data used to fit ODEs
+hold on
+
+extra_tp = linspace(23,30,8);
+plot(extra_tp,raw(:,23:30),'o', 'Color', [0.25, 0.25, 0.25], 'DisplayName', 'after February 12th') %Plots remaining data
+hold on
+
+%Defines fitted set of initial conditions
+X0_f = C_t(1)/N;
+I0_f = rsol.r(5) * C_t(1)/N;
+S0_f = 1 - I0_f - X0_f;
+R0_f = 0;
+icond_f = [S0_f, I0_f, R0_f, X0_f];
+
+all_tp = linspace(1,50);
+[t1,y1] = ode45(@(t,y)dxdt(t,y,rsol.r(1:4)),all_tp,icond_f);
+plot(t1,y1(:,4).* N, 'Color', 'Black', 'DisplayName', 'X(model fit)', 'linewidth',1.5); %Plots X(t)
+hold on 
+plot(t1,y1(:,2).* N, '--', 'Color', [1 0 0], 'DisplayName', 'I(model fit)', 'linewidth',1.5); %Plots I(t)
+
+xlim([0 50])
+xticks([1;8;15;22;29;36;43;50])
+xticklabels({'21.01', '28.01', '04.02', '11.02', '18.02', '25.02', '03.03', '10.03'})
+
+ylabel('confirmed cases')
+yticks([20000, 40000, 60000])
+yticklabels({'20k', '40k', '60k'})
+legend('Location', 'northwest')
+legend boxoff
+hold off
+
+function [pro_data,cases] = processed(data, row, start_point, end_point)
+
+    cases_raw = data{row,start_point + 4:end_point+4};
+
+    cases = cases_raw;
+    for i = 2:length(cases)-1
+        if cases(i) == cases(i-1)
+            cases(i) = (cases(i-1) + cases(i + 1))/2;
+        end
+    end
+    
+    Ct = zeros(1, 2*length(cases));
+    for i = 1:length(cases)
+        if i < length(cases)
+            Ct(i*2-1) = cases(i);
+            Ct(i*2) = (cases(i)+cases(i+1))/2;
+        else
+            Ct(i*2-1) = cases(i);
+            Ct(i*2) = cases(i);
+        end
+    end
+    pro_data = Ct;
+end
+
+function [ f ] = dxdt(~,y,p)
+    params = num2cell(p);
+    [alpha, beta, k_0, k] = params{:};
+    yvals = num2cell(y);
+    [S, I, R, X] = yvals{:};
+    dsdt = -alpha * S * I - k_0 * S;
+    didt = alpha*S*I - beta* I - k_0 * I - k * I;
+    drdt = beta*I + k_0*S;
+    dxdt = k*I + k_0*I;
+    f = [dsdt;didt;drdt;dxdt];
+end
+
+function output = RtoODE(r,tspan,y0)
+   solution = ode45(@(t,y)dxdt(t,y,r),tspan,y0);
+   solutionpoints = deval(solution, 0.5:0.5:21);
+   output = solutionpoints(4,:);
+end
