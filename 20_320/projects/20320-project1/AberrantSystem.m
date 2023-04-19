@@ -1,0 +1,52 @@
+function dydt = AberrantSystem(~,y_ab,k)
+
+    % 
+    % System of ODEs describing EGFR binding
+    % Inputs:
+    % y_ab: a 1x7 [L, Grb2, mRs, mRi, pmRs, pmRs_Grb2, pmRi_Grb2] 
+    % k: a 1x20 [Kf, Kr, Vs, Ker, Krec_r, Kdeg_r, Kdeg_d, Ked, Kcat, Kf_d, ...
+    % Kr_d, Kf_g, Kr_g, Kemr, Krec_mR, Kcat_m, Krec_rg, Kerg, Kdeg_mR, Kdeg_erg]
+
+    % Output (output is dydt):
+    % A 9x1  [dL/dt,dRs/dt,dCs/dt,dRi/dt,dDs/dt,dPDs/dt,dPDi/dt,dGrb2/dt,...
+    % dPDs-Grb2/dt]
+
+    dydt = zeros(7,1);
+    L = y_ab(1);
+    Grb2 = y_ab(2);
+    mRs = y_ab(3);
+    mRi = y_ab(4);
+    pmRs = y_ab(5);
+    pmRs_Grb2 = y_ab(6); 
+    pmRi_Grb2 = y_ab(7);
+
+    Kf = k(1);
+    Kr = k(2);
+    Vs = k(3); % is our Vs the same? Yes assume gene is mutated 
+    Ker = k(4);
+    Krec_r = k(5);
+    Kdeg_r = k(6);
+    Kdeg_d = k(7);
+    Ked = k(8);
+    Kcat = k(9);
+    Kf_d = k(10);
+    Kr_d = k(11);
+    Kf_g = k(12);
+    Kr_g = k(13);
+    Kemr = k(14);  
+    Krec_mR = k(15); 
+    Kcat_m = k(16); 
+    Krec_rg = k(17); 
+    Kerg = k(18);  
+    Kdeg_mR = k(19); 
+    Kdeg_erg = k(20); 
+    
+    dydt(1,:) = 0; %-Kf.*L.*Rs + Kr.*Cs;% Assuming concentration stays constant
+    dydt(2,:) = 0; 
+    dydt(3,:) = Vs - Kemr*mRs - Kcat_m*mRs + Krec_mR*mRi;
+    dydt(4,:) = Kemr*mRs - Krec_mR*mRi - Kdeg_mR*mRi;
+    dydt(5,:) = Kcat_m*mRs - Kf_g*pmRs*Grb2 + Kr_g*pmRs_Grb2;
+    dydt(6,:) = Kf_g*pmRs*Grb2 - Kr_g*pmRs_Grb2 - Kerg*pmRs_Grb2 + Krec_rg*pmRi_Grb2; 
+    dydt(7,:) = Kerg*pmRs_Grb2 - Kdeg_erg*pmRi_Grb2 - Krec_rg*pmRi_Grb2; 
+
+end
